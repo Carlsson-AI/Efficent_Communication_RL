@@ -102,7 +102,6 @@ class BaseGame:
         _, perceptions = env.full_batch()
         perceptions = perceptions.cpu()
         all_terms = th.long_var(range(a.msg_dim), False)
-
         p_WC = F.softmax(a(perception=perceptions), dim=1).t().data.numpy()
 
         p_CW = F.softmax(a(msg=all_terms), dim=1).data.numpy()
@@ -285,3 +284,74 @@ class OneHotChannelGame(BaseGame):
                torch.exp(self.loss_receiver), self.sum_reward / (self.print_interval * self.batch_size))
               )
         self.sum_reward = 0
+
+class MultiTaskGame(NoisyChannelGame):
+    def __init__(self,
+                 reward_func='regier_reward',
+                 bw_boost=0,
+                 com_noise=0,
+                 msg_dim=11,
+                 max_epochs=1000,
+                 perception_noise=0,
+                 batch_size=100,
+                 print_interval=1000,
+                 evaluate_interval=0,
+                 log_path='',
+                 perception_dim=3,
+                 loss_type='CrossEntropyLoss'):
+        super().__init__(reward_func, bw_boost, com_noise, msg_dim, max_epochs, perception_dim, batch_size, print_interval, evaluate_interval, log_path, perception_dim, loss_type)
+
+
+        #self.criterion_receiver = torch.nn.CrossEntropyLoss()
+    def play(self, env, agent_a, agent_b):
+        agent_a = th.cuda(agent_a)
+        agent_b = th.cuda(agent_b)
+
+        optimizer = optim.Adam(list(agent_a.parameters()) + list(agent_b.parameters()))
+
+        for i in range(self.max_epochs):
+            optimizer.zero_grad()
+            # Agent a sends a message
+            color_codes, colors = env.mini_batch(batch_size=self.batch_size)
+            color_codes = th.long_var(color_codes)
+            colors = th.float_var(colors)
+            loss1 = self.communication_channel(env, agent_a, agent_b, color_codes, colors)
+            loss1.backward()
+            # Agent b sends a message
+            color_codes, colors = env.mini_batch(batch_size=self.batch_size)
+            color_codes = th.long_var(color_codes)
+            colors = th.float_var(colors)
+            loss2 = self.communication_channel(env, agent_b, agent_a, color_codes, colors)
+            loss2.backward()
+            # Backprogate
+            loss = loss1 + loss2
+            #loss.backward()
+            optimizer.step()
+
+            # printing status
+            if self.print_interval != 0 and ((i+1) % self.print_interval == 0):
+                self.print_status(loss)
+
+            if self.evaluate_interval != 0 and ((i+1) % self.evaluate_interval == 0):
+                self.evaluate(env, agent_a)
+
+
+        return agent_a.cpu()
+    def compute_gibson_cost(self, env, a):
+        _, perceptions = env.full_batch()
+        perceptions = perceptions.cpu()
+        all_terms = th.long_var(range(a.msg_dim), False)
+        print(all_terms.data.type())
+        p_WC = F.softmax(a(perception=perceptions), dim=1).t().data.numpy()
+
+        p_CW = F.softmax(a(msg=all_terms), dim=1).data.numpy()
+        eps = 0.000001
+        S = -np.diag(np.matmul(p_WC.transpose(), (np.log2(p_CW + eps))))
+        avg_S = S.sum() / len(S)  # expectation assuming uniform prior
+        # debug code
+        # s = 0
+        # c = 43
+        # for w in range(a.msg_dim):
+        #     s += -p_WC[w, c]*np.log2(p_CW[w, c])
+        # print(S[c] - s)
+        return S, avg_S
