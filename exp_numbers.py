@@ -18,16 +18,16 @@ def run(host_name):
                recursive=True)
     exp = Experiment(exp_name='num_b',
                      fixed_params=[('env', 'numbers'),
-                                   ('max_epochs', 10000),  #10000
+                                   ('max_epochs', 1000),  #10000
                                    ('hidden_dim', 10),
                                    ('batch_size', 100),
                                    ('perception_dim', 1),
                                    ('target_dim', 100),
                                    ('print_interval', 1000)],
-                     param_ranges=[('avg_over', range(20)),  # 50
-                                   ('perception_noise', [0, 25]),  # [0, 25, 50, 100],
-                                   ('msg_dim', range(3, 12)), #3, 12
-                                   ('com_noise', np.linspace(start=0, stop=1, num=11))
+                     param_ranges=[('avg_over', [50]),  # 50
+                                   ('perception_noise', [50]),  # [0, 25, 50, 100],
+                                   ('msg_dim', [4]), #3, 12
+                                   ('com_noise', np.linspace(start=0, stop=1, num=2))
                                    ],
                      queue=queue)
     queue.sync(exp.pipeline_path, exp.pipeline_path, sync_to=sge.SyncTo.REMOTE, recursive=True)
@@ -121,7 +121,8 @@ def main():
 
     cluster_ensemble = exp.get_flattened_results('agent_language_map')
     consensus = Correlation_Clustering.compute_consensus_map(cluster_ensemble, k=10, iter=100)
-    print(consensus.values())
+    print(consensus)
+    #print(consensus.values())
 
     # Visualize experiment
     visualize(exp)
