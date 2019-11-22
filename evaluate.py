@@ -5,15 +5,15 @@ import torchHelpers as th
 
 import numpy as np
 from sklearn.metrics.cluster import adjusted_rand_score
-
 import Correlation_Clustering
-
+import torch
 
 def agent_language_map(env, a):
     V = {}
     a = th.cuda(a)
     perception_indices, perceptions = env.full_batch()
-
+    if isinstance(perceptions, np.ndarray):
+        perceptions = th.float_var(torch.tensor(perceptions, dtype=torch.float32))
     probs = a(perception=perceptions)
     _, terms = probs.max(1)
 

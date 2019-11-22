@@ -1,10 +1,11 @@
 import os
 import numpy as np
-#import requests
+import requests
 import re
 from ast import literal_eval
-#import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 from com_enviroments.BaseEnviroment import BaseEnviroment
+import torch
 
 class NumberEnvironment(BaseEnviroment):
     def __init__(self) -> None:
@@ -13,8 +14,8 @@ class NumberEnvironment(BaseEnviroment):
         self.samp = 'freq'
         self.numbers = np.array(list(range(self.data_dim)))
         self.num_use_dist = self.get_use_dist()
-        #plt.plot(range(100), self.num_use_dist)
-        #plt.savefig('fig/wrd_dist.png')
+        plt.plot(range(100), self.num_use_dist)
+        plt.savefig('fig/wrd_dist.png')
     def full_batch(self):
         return self.numbers, np.expand_dims(self.numbers, axis=1)
 
@@ -46,5 +47,18 @@ class NumberEnvironment(BaseEnviroment):
                 data += [qry['timeseries'][1] for qry in literal_eval(res[0])]
             data = np.array(data)
             data /= data.sum()
+            print(data)
             np.save(fname, data)
         return data
+    
+    def number_reward(self, target, guess):
+        # Distance Reward
+        diff = torch.abs(target - guess.unsqueeze(dim=1))
+        reward = 1-(diff.float()/100)
+        # Importance Reward
+        delta = 1
+        eps = 0.0001
+        mask = torch.abs(target - guess.unsqueeze(dim=1)) == 0
+        reward[mask] = reward[mask] + delta * 1 /(eps + target[mask].float())
+        return reward
+

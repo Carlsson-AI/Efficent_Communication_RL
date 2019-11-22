@@ -13,7 +13,7 @@ import evaluate
 def run():
 
     exp = Experiment(exp_name='local_experiment',
-                     fixed_params=[('env', 'wcs'),
+                     fixed_params=[('env', 'wgs'),
                                    ('max_epochs', 10000),  #10000
                                    ('hidden_dim', 20),
                                    ('batch_size', 100),
