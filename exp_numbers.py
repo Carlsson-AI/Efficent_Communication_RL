@@ -18,23 +18,16 @@ def run(host_name):
                recursive=True)
     exp = Experiment(exp_name='num_b',
                      fixed_params=[('env', 'numbers'),
-                                   ('max_epochs', 1000),  #10000
-                                   ('hidden_dim', 10),
-                                   ('shared_dim', 20),
+                                   ('max_epochs', 10000),  #10000
+                                   ('hidden_dim', 25),
                                    ('batch_size', 100),
                                    ('perception_dim', 1),
                                    ('target_dim', 100),
                                    ('print_interval', 1000)],
                      param_ranges=[('avg_over', [50]),  # 50
-<<<<<<< HEAD
-                                   ('perception_noise', [0, 25, 50]),  # [0, 25, 50, 100],
+                                   ('perception_noise', [1]),  # [0, 25, 50, 100],
                                    ('msg_dim', [4]), #3, 12
-                                   ('com_noise', np.linspace(start=0, stop=3, num=3))
-=======
-                                   ('perception_noise', [50]),  # [0, 25, 50, 100],
-                                   ('msg_dim', [4]), #3, 12
-                                   ('com_noise', np.linspace(start=0, stop=1, num=2))
->>>>>>> b9d3b42cdcc78a2d1b21f9579a5b0d7108e1c508
+                                   ('com_noise', np.linspace(start=1, stop=2, num=1))
                                    ],
                      queue=queue)
     queue.sync(exp.pipeline_path, exp.pipeline_path, sync_to=sge.SyncTo.REMOTE, recursive=True)
@@ -46,19 +39,17 @@ def run(host_name):
         exp_i += 1
         #print('Param epoch %d of %d' % (params_i[exp.axes['avg_over']], exp.shape[exp.axes['avg_over']]))
 
-        agent_a = agents.BasicMultiTaskAgent(msg_dim=params_v[exp.axes['msg_dim']],
+        agent_a = agents.SoftmaxAgent(msg_dim=params_v[exp.axes['msg_dim']],
                                       hidden_dim=exp.fixed_params['hidden_dim'],
-                                      shared_dim=exp.fixed_params['shared_dim'],
                                       color_dim=exp.fixed_params['target_dim'],
                                       perception_dim=exp.fixed_params['perception_dim'])
 
-        agent_b = agents.BasicMultiTaskAgent(msg_dim=params_v[exp.axes['msg_dim']],
+        agent_b = agents.SoftmaxAgent(msg_dim=params_v[exp.axes['msg_dim']],
                                       hidden_dim=exp.fixed_params['hidden_dim'],
-                                      shared_dim=exp.fixed_params['shared_dim'],
                                       color_dim=exp.fixed_params['target_dim'],
                                       perception_dim=exp.fixed_params['perception_dim'])
 
-        game = com_game.MultiTaskGame(reward_func='number_reward',
+        game = com_game.NoisyChannelGame(reward_func='number_reward',
                                          com_noise=params_v[exp.axes['com_noise']],
                                          msg_dim=params_v[exp.axes['msg_dim']],
                                          max_epochs=exp.fixed_params['max_epochs'],
@@ -95,7 +86,7 @@ def visualize(exp):
     ranges = com_game.BaseGame.compute_ranges(V_mode)
     print(ranges)
     with open('numbers.json', 'w') as fp:
-        json.dump(stringify_keys(ranges), fp)
+        json.dump(ranges, fp)
     #plot_ranges(ranges)
  
 
@@ -144,7 +135,7 @@ def main():
 def stringify_keys(d):
     """Convert a dict's keys to strings if they are not."""
     for key in d.keys():
-
+        #print(key)
         # check inner dict
         if isinstance(d[key], dict):
             value = stringify_keys(d[key])
