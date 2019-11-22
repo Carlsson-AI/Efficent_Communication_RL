@@ -25,8 +25,8 @@ def run(host_name):
                                    ('target_dim', 100),
                                    ('print_interval', 1000)],
                      param_ranges=[('avg_over', range(20)),  # 50
-                                   ('perception_noise', [0]),  # [0, 25, 50, 100],
-                                   ('msg_dim', range(1, 10)), #3, 12
+                                   ('perception_noise', [0, 25]),  # [0, 25, 50, 100],
+                                   ('msg_dim', range(3, 12)), #3, 12
                                    ('com_noise', np.linspace(start=0, stop=1, num=11))
                                    ],
                      queue=queue)
@@ -39,17 +39,19 @@ def run(host_name):
         exp_i += 1
         #print('Param epoch %d of %d' % (params_i[exp.axes['avg_over']], exp.shape[exp.axes['avg_over']]))
 
-        agent_a = agents.SoftmaxAgent(msg_dim=params_v[exp.axes['msg_dim']],
+        agent_a = agents.BasicMultiTaskAgent(msg_dim=params_v[exp.axes['msg_dim']],
                                       hidden_dim=exp.fixed_params['hidden_dim'],
+                                      shared_dim=exp.fixed_params['hidden_dim'],
                                       color_dim=exp.fixed_params['target_dim'],
                                       perception_dim=exp.fixed_params['perception_dim'])
 
-        agent_b = agents.SoftmaxAgent(msg_dim=params_v[exp.axes['msg_dim']],
+        agent_b = agents.BasicMultiTaskAgent(msg_dim=params_v[exp.axes['msg_dim']],
                                       hidden_dim=exp.fixed_params['hidden_dim'],
+                                      shared_dim=exp.fixed_params['hidden_dim'],
                                       color_dim=exp.fixed_params['target_dim'],
                                       perception_dim=exp.fixed_params['perception_dim'])
 
-        game = com_game.NoisyChannelGame(reward_func='abs_dist',
+        game = com_game.MultiTaskGame(reward_func='number_reward',
                                          com_noise=params_v[exp.axes['com_noise']],
                                          msg_dim=params_v[exp.axes['msg_dim']],
                                          max_epochs=exp.fixed_params['max_epochs'],
@@ -105,7 +107,7 @@ def visualize(exp):
 
 
 def main():
-    args = exp_shared.parse_script_arguments()
+    args = exp_shared.parse_script_arguments().parse_args()
     # Run experiment
     if args.pipeline == '':
         exp = run(args.host_name)

@@ -23,13 +23,14 @@ def run(host_name='local', pipeline=''):
                      fixed_params=[('loss_type', 'REINFORCE'),
                                    ('bw_boost', 1),
                                    ('env', 'wcs'),
-                                   ('max_epochs', 1000),  # 10000
+                                   ('max_epochs', 5000),  # 10000
                                    ('hidden_dim', 20),
+                                   ('shared_dim', 10),
                                    ('batch_size', 100),
                                    ('perception_dim', 3),
                                    ('target_dim', 330),
                                    ('print_interval', 1000),
-                                   ('msg_dim', 6)],
+                                   ('msg_dim', 50)],
                      param_ranges=[('avg_over', range(1)),  # 50
                                    ('perception_noise',[40]),  # np.logspace(0, 9, num=10, base=2)) [0, 10, 20, 30, 40, 50,  80, 120, 160, 320]), [0, 25, 50, 100],[0, 10, 20, 40, 80, 160, 320]
                                    ('com_noise', [0.125])],  # np.logspace(-3, 6, num=10, base=2)   [0, 0.1, 0.3, 0.5, 1] [0, 0.5, 3, 10, 20, 50]
@@ -42,16 +43,18 @@ def run(host_name='local', pipeline=''):
         print('Scheduled %d experiments out of %d' % (exp_i, len(list(exp))))
         exp_i += 1
 
-        agent_a = agents.SoftmaxAgent(msg_dim=exp.fixed_params['msg_dim'],
+        agent_a = agents.BasicMultiTaskAgent(msg_dim=exp.fixed_params['msg_dim'],
                                       hidden_dim=exp.fixed_params['hidden_dim'],
+                                      shared_dim=exp.fixed_params['shared_dim'],
                                       color_dim=exp.fixed_params['target_dim'],
                                       perception_dim=exp.fixed_params['perception_dim'])
-        agent_b = agents.SoftmaxAgent(msg_dim=exp.fixed_params['msg_dim'],
+        agent_b = agents.BasicMultiTaskAgent(msg_dim=exp.fixed_params['msg_dim'],
                                       hidden_dim=exp.fixed_params['hidden_dim'],
+                                      shared_dim=exp.fixed_params['shared_dim'],
                                       color_dim=exp.fixed_params['target_dim'],
                                       perception_dim=exp.fixed_params['perception_dim'])
 
-        game = com_game.NoisyChannelGame(com_noise=params_v[exp.axes['com_noise']],
+        game = com_game.MultiTaskGame(com_noise=params_v[exp.axes['com_noise']],
                                          msg_dim=exp.fixed_params['msg_dim'],
                                          max_epochs=exp.fixed_params['max_epochs'],
                                          perception_noise=params_v[exp.axes['perception_noise']],
@@ -105,15 +108,23 @@ def visualize(exp):
                   for noise in exp.param_ranges['perception_noise']]).reshape(-1)
 
     n = exp.param_ranges['perception_noise']
+    n = np.array(n)
+    print(n)
     n = n + (n/2)
-    n[-1] = 600
-    plt.hist2d(x, y, bins=[n, range(y.min(), y.max()+1)], cmap=plt.cm.BuPu)
-    plt.xlabel('environment $\sigma_e^2$')
-    plt.ylabel('term usage')
-    plt.colorbar()
-    fig_name = exp.pipeline_path + '/fig_term_histogram.png.asdf.tiff'
+    #n[-1] = 60
+    print(x.shape)
+    print(y.shape)
+    print(y.min())
+    print(y.max())
+    x = np.array(x)
+    y = np.array(y)
+   # plt.hist2d(x, y, bins=4, cmap=plt.cm.BuPu)
+   # plt.xlabel('environment $\sigma_e^2$')
+   # plt.ylabel('term usage')
+   # plt.colorbar()
+   # fig_name = exp.pipeline_path + '/fig_term_histogram.png.asdf.tiff'
 
-    plt.savefig(fig_name, dpi=300, compression="tiff_lzw")
+   # plt.savefig(fig_name, dpi=300, compression="tiff_lzw")
 
     # term usage across different level of noise
     # viz.plot_with_conf(exp, 'term_usage', 'com_noise', x_label='com $\sigma^2$')
@@ -198,10 +209,9 @@ def main(args):
 
 
     # Visualize experiment
-    print_tables(exp)
-    visualize(exp)
+    #visualize(exp)
 
-    #print_tables(exp)
+    print_tables(exp)
 
 
 if __name__ == "__main__":

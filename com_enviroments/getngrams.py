@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*
 # This code is based on https://github.com/econpy/google-ngrams
 from ast import literal_eval
-from pandas import DataFrame  # http://github.com/pydata/pandas
+from pandas import DataFrame, concat  # http://github.com/pydata/pandas
 import re
 import requests               # http://github.com/kennethreitz/requests
 import subprocess
@@ -25,8 +25,10 @@ def getNgrams(query, corpus, startYear, endYear, smoothing, caseInsensitive):
         params['content'] = params['content'].replace('?', '*')
     if '@' in params['content']:
         params['content'] = params['content'].replace('@', '=>')
+    print(params)
     req = requests.get('http://books.google.com/ngrams/graph', params=params)
     res = re.findall('var data = (.*?);\\n', req.text)
+    #print(res)
     if res:
         data = {qry['ngram']: qry['timeseries']
                 for qry in literal_eval(res[0])}
@@ -129,14 +131,14 @@ def runQuery(argumentString):
             word_case = 'caseInsensitive'
         else:
             word_case = 'caseSensitive'
-        filename = '%s-%s-%d-%d-%d-%s.csv' % (queries, corpus, startYear,
+        filename = '%s-%s-%d-%d-%d-%s.csv' % ('WordNet', corpus, startYear,
                                               endYear, smoothing, word_case)
         if toSave:
             for col in df.columns:
                 if '&gt;' in col:
                     df[col.replace('&gt;', '>')] = df.pop(col)
-            df.to_csv(filename, index=False)
-            print(('Data saved to %s' % filename))
+            #df.to_csv(filename, index=False)
+            #print(('Data saved to %s' % filename))
         if toPlot:
             try:
                 subprocess.call(['python', 'xkcd.py', filename])
@@ -149,9 +151,26 @@ def runQuery(argumentString):
                     print(('Plotting Failed: %s' % filename))
         if notifyUser:
             print(warningMessage)
+        return df
+
+
+def runLargeQuery(content_list, save_string, argumentString):
+    n = len(content_list)
+    chunk_size = 10
+    chunks = int(n / chunk_size)
+    mod = n % chunk_size
+    current_query = ','.join([str(s) for s in content_list[chunks * chunk_size : chunks * chunk_size + mod]])
+    df = runQuery(current_query + argumentString)
+    for i in range(chunks): 
+        current_query = ','.join([str(s) for s in content_list[i * chunk_size : (i + 1) * chunk_size]])
+        # Ngram cannot handle _
+        current_query = current_query.replace('_', ' ')
+        df  = df.merge(runQuery(current_query + argumentString))
+    df.to_csv(save_string, index=False, sep='\t')
+
 
 if __name__ == '__main__':
-    #runQuery(','.join([str(i) for i in range(2)]))
+    runQuery(','.join([str(i) for i in range(2)]))
     _, _, df = getNgrams(','.join([str(i) for i in range(2)]), 'eng_2012', 1999, 2000, smoothing=3, caseInsensitive=False)
     data = df.loc[1]
 

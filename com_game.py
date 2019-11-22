@@ -100,6 +100,8 @@ class BaseGame:
     # Outdated as of nosy channel model
     def compute_gibson_cost(self, env, a):
         _, perceptions = env.full_batch()
+        if isinstance(perceptions, np.ndarray):
+            perceptions = th.float_var(torch.tensor(perceptions, dtype=torch.float32))
         perceptions = perceptions.cpu()
         all_terms = th.long_var(range(a.msg_dim), False)
         p_WC = F.softmax(a(perception=perceptions), dim=1).t().data.numpy()
@@ -159,6 +161,8 @@ class BaseGame:
                torch.exp(loss))
               )
 
+   # def number_loss(guess_logits, targets): 
+
 class NoisyChannelGame(BaseGame):
 
     def __init__(self,
@@ -215,7 +219,8 @@ class NoisyChannelGame(BaseGame):
         elif self.reward_func == 'abs_dist':
             diff = torch.abs(target - guess.unsqueeze(dim=1))
             reward = 1-(diff.float()/100) #1-(diff.float()/50)
-
+        elif self.reward_func == 'number_reward':
+            reward = env.number_reward(target, guess)
         self.sum_reward += reward.sum()
 
         # compute loss and update model
@@ -337,21 +342,7 @@ class MultiTaskGame(NoisyChannelGame):
 
 
         return agent_a.cpu()
-    def compute_gibson_cost(self, env, a):
-        _, perceptions = env.full_batch()
-        perceptions = perceptions.cpu()
-        all_terms = th.long_var(range(a.msg_dim), False)
-        print(all_terms.data.type())
-        p_WC = F.softmax(a(perception=perceptions), dim=1).t().data.numpy()
 
-        p_CW = F.softmax(a(msg=all_terms), dim=1).data.numpy()
-        eps = 0.000001
-        S = -np.diag(np.matmul(p_WC.transpose(), (np.log2(p_CW + eps))))
-        avg_S = S.sum() / len(S)  # expectation assuming uniform prior
-        # debug code
-        # s = 0
-        # c = 43
-        # for w in range(a.msg_dim):
-        #     s += -p_WC[w, c]*np.log2(p_CW[w, c])
-        # print(S[c] - s)
-        return S, avg_S
+
+
+
