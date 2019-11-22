@@ -122,10 +122,21 @@ class BaseGame:
     @staticmethod
     def reduce_maps(name, exp, reduce_method='mode'):
         maps = exp.get_flattened_results(name)
-        np_maps = np.array([list(map.values()) for map in maps])
+        #print(len(maps))
+        if isinstance(maps, list):
+            np_maps = np.array([list(map) for map in maps])
+            #print(np_maps.shape)
+        else:
+            np_maps = np.array([list(map.values()) for map in maps])
         if reduce_method == 'mode':
-            np_mode_map = stats.mode(np_maps).mode[0]
-            res = {k: np_mode_map[k] for k in maps[0].keys()}
+            if isinstance(maps, list):
+                np_mode_map = stats.mode(np_maps).mode[0]
+                #print(np_mode_map)
+                res = {k: np_mode_map[k] for k in range(len(maps[0]))}
+                #print(res)
+            else:
+                np_mode_map = stats.mode(np_maps).mode[0]
+                res = {k: np_mode_map[k] for k in maps[0].keys()}
         else:
             raise ValueError('unsupported reduce function: ' + reduce_method)
         return res
@@ -133,8 +144,10 @@ class BaseGame:
     @staticmethod
     def compute_ranges(V):
         lex = {}
+        #for n in V.keys():
         for n in range(len(V)):
-            if not V[n] in lex.keys():
+            #print(n)
+            if not V[n] in list(lex.keys()):
                 lex[V[n]] = [n]
             else:
                 lex[V[n]] += [n]

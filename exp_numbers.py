@@ -1,6 +1,6 @@
 import argparse
 import numpy as np
-
+import json
 import Correlation_Clustering
 import gridengine as sge
 import com_game
@@ -20,14 +20,15 @@ def run(host_name):
                      fixed_params=[('env', 'numbers'),
                                    ('max_epochs', 10000),  #10000
                                    ('hidden_dim', 10),
+                                   ('shared_dim', 20),
                                    ('batch_size', 100),
                                    ('perception_dim', 1),
                                    ('target_dim', 100),
                                    ('print_interval', 1000)],
-                     param_ranges=[('avg_over', range(20)),  # 50
-                                   ('perception_noise', [0, 25]),  # [0, 25, 50, 100],
-                                   ('msg_dim', range(3, 12)), #3, 12
-                                   ('com_noise', np.linspace(start=0, stop=1, num=11))
+                     param_ranges=[('avg_over', [50]),  # 50
+                                   ('perception_noise', [0, 25, 50]),  # [0, 25, 50, 100],
+                                   ('msg_dim', [4]), #3, 12
+                                   ('com_noise', np.linspace(start=0, stop=3, num=3))
                                    ],
                      queue=queue)
     queue.sync(exp.pipeline_path, exp.pipeline_path, sync_to=sge.SyncTo.REMOTE, recursive=True)
@@ -41,13 +42,13 @@ def run(host_name):
 
         agent_a = agents.BasicMultiTaskAgent(msg_dim=params_v[exp.axes['msg_dim']],
                                       hidden_dim=exp.fixed_params['hidden_dim'],
-                                      shared_dim=exp.fixed_params['hidden_dim'],
+                                      shared_dim=exp.fixed_params['shared_dim'],
                                       color_dim=exp.fixed_params['target_dim'],
                                       perception_dim=exp.fixed_params['perception_dim'])
 
         agent_b = agents.BasicMultiTaskAgent(msg_dim=params_v[exp.axes['msg_dim']],
                                       hidden_dim=exp.fixed_params['hidden_dim'],
-                                      shared_dim=exp.fixed_params['hidden_dim'],
+                                      shared_dim=exp.fixed_params['shared_dim'],
                                       color_dim=exp.fixed_params['target_dim'],
                                       perception_dim=exp.fixed_params['perception_dim'])
 
@@ -87,6 +88,10 @@ def visualize(exp):
     V_mode = com_game.BaseGame.reduce_maps('agent_language_map', exp, reduce_method='mode')
     ranges = com_game.BaseGame.compute_ranges(V_mode)
     print(ranges)
+    with open('numbers.json', 'w') as fp:
+        json.dump(stringify_keys(ranges), fp)
+    #plot_ranges(ranges)
+ 
 
     # gibson cost
     viz.plot_lines_with_conf(exp, 'gibson_cost', 'msg_dim', 'perception_noise', measure_label='Gibson communication efficiency', x_label='number of color words', z_label='perception $\sigma^2$')
@@ -94,16 +99,19 @@ def visualize(exp):
     # viz.plot_with_conf(exp, 'gibson_cost', 'com_noise', 'perception_noise', measure_label='Gibson communication efficiency')
 
     # regier cost
-    viz.plot_lines_with_conf(exp, 'regier_cost', 'msg_dim', 'perception_noise', x_label='number of color words', z_label='perception $\sigma^2$')
-    viz.plot_lines_with_conf(exp, 'regier_cost', 'msg_dim', 'com_noise', x_label='number of color words', z_label='com $\sigma^2$')
+    viz.plot_lines_with_conf(exp, 'regier_cost', 'msg_dim', 'perception_noise', x_label='number words', z_label='perception $\sigma^2$')
+    viz.plot_lines_with_conf(exp, 'regier_cost', 'msg_dim', 'com_noise', x_label='number words', z_label='com $\sigma^2$')
 
     # wellformedness
-    viz.plot_lines_with_conf(exp, 'wellformedness', 'msg_dim', 'perception_noise', x_label='number of color words', z_label='perception $\sigma^2$')
-    viz.plot_lines_with_conf(exp, 'wellformedness', 'msg_dim', 'com_noise', x_label='number of color words', z_label='com $\sigma^2$')
+    viz.plot_lines_with_conf(exp, 'wellformedness', 'msg_dim', 'perception_noise', x_label='number words', z_label='perception $\sigma^2$')
+    viz.plot_lines_with_conf(exp, 'wellformedness', 'msg_dim', 'com_noise', x_label='number words', z_label='com $\sigma^2$')
 
     # term usage
-    viz.plot_lines_with_conf(exp, 'term_usage', 'msg_dim', 'perception_noise', x_label='number of color words', z_label='perception $\sigma^2$')
-    viz.plot_lines_with_conf(exp, 'term_usage', 'msg_dim', 'com_noise', x_label='number of color words', z_label='com $\sigma^2$')
+    viz.plot_lines_with_conf(exp, 'term_usage', 'msg_dim', 'perception_noise', x_label='number words', z_label='perception $\sigma^2$')
+    viz.plot_lines_with_conf(exp, 'term_usage', 'msg_dim', 'com_noise', x_label='number words', z_label='com $\sigma^2$')
+
+
+#def plot_ranges(ranges):
 
 
 def main():
@@ -121,11 +129,35 @@ def main():
 
     cluster_ensemble = exp.get_flattened_results('agent_language_map')
     consensus = Correlation_Clustering.compute_consensus_map(cluster_ensemble, k=10, iter=100)
-    print(consensus.values())
+    #print(consensus)
+    #print(consensus.values())
 
     # Visualize experiment
     visualize(exp)
 
+def stringify_keys(d):
+    """Convert a dict's keys to strings if they are not."""
+    for key in d.keys():
+
+        # check inner dict
+        if isinstance(d[key], dict):
+            value = stringify_keys(d[key])
+        else:
+            value = d[key]
+
+        # convert nonstring to string if needed
+        if not isinstance(key, str):
+            try:
+                d[str(key)] = value
+            except Exception:
+                try:
+                    d[repr(key)] = value
+                except Exception:
+                    raise
+
+            # delete old key
+            del d[key]
+    return d
 
 if __name__ == "__main__":
     main()
