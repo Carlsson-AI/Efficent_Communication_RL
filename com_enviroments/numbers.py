@@ -56,9 +56,9 @@ class NumberEnvironment(BaseEnviroment):
         diff = torch.abs(target - guess.unsqueeze(dim=1))
         reward = 1-(diff.float()/100)
         # Importance Reward
-        delta = 1
-        eps = 0.0001
+        delta = 10
+        eps = 0.00001
         mask = torch.abs(target - guess.unsqueeze(dim=1)) == 0
-        reward[mask] = reward[mask] + delta * 1 /(eps + target[mask].float())
+        reward[mask] = reward[mask] + delta * 1 /(eps + target[mask].float()**2)
         return reward
 

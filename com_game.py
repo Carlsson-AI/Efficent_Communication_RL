@@ -153,7 +153,7 @@ class BaseGame:
                 lex[V[n]] += [n]
         ranges = {}
         for w in lex.keys():
-            ranges[w] = []
+            ranges[str(w)] = []
             state = 'out'
             for n in lex[w]:
                 if state == 'out':
@@ -162,10 +162,10 @@ class BaseGame:
                     state = 'in'
                 elif state == 'in':
                     if prev + 1 != n:
-                        ranges[w] += [(range_start, prev)]
+                        ranges[str(w)] += [(range_start, prev)]
                         range_start = n
                     prev = n
-            ranges[w] += [(range_start, prev)]
+            ranges[str(w)] += [(range_start, prev)]
         return ranges
 
     def print_status(self, loss):
