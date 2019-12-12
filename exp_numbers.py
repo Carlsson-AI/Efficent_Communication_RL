@@ -24,10 +24,10 @@ def run(host_name):
                                    ('perception_dim', 1),
                                    ('target_dim', 100),
                                    ('print_interval', 1000)],
-                     param_ranges=[('avg_over', [50]),  # 50
-                                   ('perception_noise', [1]),  # [0, 25, 50, 100],
+                     param_ranges=[('avg_over', [1]),  # 50
+                                   ('perception_noise', [0]),  # [0, 25, 50, 100],
                                    ('msg_dim', [4]), #3, 12
-                                   ('com_noise', np.linspace(start=1, stop=2, num=1))
+                                   ('com_noise', np.linspace(start=1, stop=1, num=1))
                                    ],
                      queue=queue)
     queue.sync(exp.pipeline_path, exp.pipeline_path, sync_to=sge.SyncTo.REMOTE, recursive=True)
@@ -41,15 +41,17 @@ def run(host_name):
 
         agent_a = agents.SoftmaxAgent(msg_dim=params_v[exp.axes['msg_dim']],
                                       hidden_dim=exp.fixed_params['hidden_dim'],
+                                #      shared_dim=exp.fixed_params['hidden_dim'],
                                       color_dim=exp.fixed_params['target_dim'],
                                       perception_dim=exp.fixed_params['perception_dim'])
 
         agent_b = agents.SoftmaxAgent(msg_dim=params_v[exp.axes['msg_dim']],
                                       hidden_dim=exp.fixed_params['hidden_dim'],
+                                #      shared_dim=exp.fixed_params['hidden_dim'],
                                       color_dim=exp.fixed_params['target_dim'],
                                       perception_dim=exp.fixed_params['perception_dim'])
 
-        game = com_game.NoisyChannelGame(reward_func='number_reward',
+        game = com_game.NoisyChannelGame(reward_func='sim_index',
                                          com_noise=params_v[exp.axes['com_noise']],
                                          msg_dim=params_v[exp.axes['msg_dim']],
                                          max_epochs=exp.fixed_params['max_epochs'],
@@ -57,10 +59,9 @@ def run(host_name):
                                          batch_size=exp.fixed_params['batch_size'],
                                          print_interval=exp.fixed_params['print_interval'],
                                          perception_dim=exp.fixed_params['perception_dim'],
-                                         loss_type='CrossEntropyLoss')
+                                         loss_type='REINFORCE')
 
         game_outcome = exp.run(game.play, env, agent_a, agent_b).result()
-
         V = exp.run(evaluate.agent_language_map, env, a=game_outcome).result()
 
         exp.set_result('agent_language_map', params_i, V)
@@ -126,7 +127,6 @@ def main():
 
     cluster_ensemble = exp.get_flattened_results('agent_language_map')
     consensus = Correlation_Clustering.compute_consensus_map(cluster_ensemble, k=10, iter=100)
-    print(consensus)
     #print(consensus.values())
 
     # Visualize experiment

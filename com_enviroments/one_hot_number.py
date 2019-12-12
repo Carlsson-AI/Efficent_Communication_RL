@@ -7,10 +7,10 @@ import matplotlib.pyplot as plt
 from com_enviroments.BaseEnviroment import BaseEnviroment
 import torch
 
-class NumberEnvironment(BaseEnviroment):
-    def __init__(self) -> None:
+class OneHotNumberEnvironment(BaseEnviroment):
+    def __init__(self, data_dim):
         super().__init__()
-        self.data_dim = 100
+        self.data_dim = data_dim
         self.samp = 'freq'
         self.numbers = np.array(list(range( self.data_dim)))
         self.num_use_dist = self.get_use_dist()
@@ -25,7 +25,11 @@ class NumberEnvironment(BaseEnviroment):
             batch = np.expand_dims(np.random.choice(a=self.numbers, size=batch_size, replace=True, p=self.num_use_dist), axis=1)
         else:
             batch = np.expand_dims(np.random.randint(0, self.data_dim, batch_size), axis=1)
-        return batch, batch + 1
+
+        onehot = torch.FloatTensor(len(batch), self.data_dim)
+        onehot.zero_()
+        batch = Variable(onehot.scatter_(1, batch.data.unsqueeze(1), 1))
+        return batch, batch
 
     def sim_index(self, num_a, num_b):
         return self.data_dim - np.sqrt(np.power(num_a-num_b, 2))
@@ -37,6 +41,7 @@ class NumberEnvironment(BaseEnviroment):
         else:
             data = []
             for i in range(10):
+                # [1,100]
                 numbers = range(i*10 + 1,(i+1)*10 + 1)
                 query = ','.join([str(n) for n in numbers])
                 params = dict(content=query, year_start=1900, year_end=2000,
