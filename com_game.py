@@ -6,6 +6,7 @@ from torch import optim
 from torch.distributions import Categorical
 from torch.distributions import Normal
 
+import copy
 import evaluate
 import torchHelpers as th
 import matplotlib
@@ -32,6 +33,7 @@ class BaseGame:
         self.log_path = log_path
         self.training_mode = True
 
+        self.reward_log = []
         self.gibson_cost = []
         self.regier_cost = []
         self.wellformedness = []
@@ -54,14 +56,18 @@ class BaseGame:
 
             loss.backward()
             optimizer.step()
-
             # printing status
             if self.print_interval != 0 and ((i+1) % self.print_interval == 0):
-                self.print_status(loss)
+                if self.loss_type=='REINFORCE':
+                    #self.print_status(-loss)
+                    self.print_status(loss)
+                else:
+                    self.print_status(loss)
 
             if self.evaluate_interval != 0 and ((i+1) % self.evaluate_interval == 0):
                 self.evaluate(env, agent_a)
-
+        agent_a.reward_log = self.reward_log
+        agent_b.reward_log = self.reward_log
         return agent_a.cpu()
 
     def communication_channel(self, env, agent_a, agent_b, color_codes, colors):
@@ -122,10 +128,21 @@ class BaseGame:
     @staticmethod
     def reduce_maps(name, exp, reduce_method='mode'):
         maps = exp.get_flattened_results(name)
-        np_maps = np.array([list(map.values()) for map in maps])
+        #print(len(maps))
+        if isinstance(maps, list):
+            np_maps = np.array([list(map) for map in maps])
+            #print(np_maps.shape)
+        else:
+            np_maps = np.array([list(map.values()) for map in maps])
         if reduce_method == 'mode':
-            np_mode_map = stats.mode(np_maps).mode[0]
-            res = {k: np_mode_map[k] for k in maps[0].keys()}
+            if isinstance(maps, list):
+                np_mode_map = stats.mode(np_maps).mode[0]
+                #print(np_mode_map)
+                res = {k: np_mode_map[k] for k in range(len(maps[0]))}
+                #print(res)
+            else:
+                np_mode_map = stats.mode(np_maps).mode[0]
+                res = {k: np_mode_map[k] for k in maps[0].keys()}
         else:
             raise ValueError('unsupported reduce function: ' + reduce_method)
         return res
@@ -133,14 +150,17 @@ class BaseGame:
     @staticmethod
     def compute_ranges(V):
         lex = {}
+        #for n in V.keys():
         for n in range(len(V)):
-            if not V[n] in lex.keys():
+            #print(n)
+            # start from 1 not 0
+            if not V[n] in list(lex.keys()):
                 lex[V[n]] = [n]
             else:
                 lex[V[n]] += [n]
         ranges = {}
         for w in lex.keys():
-            ranges[w] = []
+            ranges[str(w)] = []
             state = 'out'
             for n in lex[w]:
                 if state == 'out':
@@ -149,10 +169,10 @@ class BaseGame:
                     state = 'in'
                 elif state == 'in':
                     if prev + 1 != n:
-                        ranges[w] += [(range_start, prev)]
+                        ranges[str(w)] += [(range_start+1, prev+1)]
                         range_start = n
                     prev = n
-            ranges[w] += [(range_start, prev)]
+            ranges[str(w)] += [(range_start+1, prev+1)]
         return ranges
 
     def print_status(self, loss):
@@ -161,7 +181,8 @@ class BaseGame:
                torch.exp(loss))
               )
 
-   # def number_loss(guess_logits, targets): 
+    def get_reward_log(self, a): 
+        return a.reward_log
 
 class NoisyChannelGame(BaseGame):
 
@@ -185,7 +206,7 @@ class NoisyChannelGame(BaseGame):
         self.msg_dim = msg_dim
         self.perception_noise = perception_noise
         self.perception_dim = perception_dim
-
+        self.reward_log = []
         self.loss_type = loss_type
 
         self.sum_reward = 0
@@ -200,15 +221,17 @@ class NoisyChannelGame(BaseGame):
         perception = perception + noise
         # generate message
         msg_logits = agent_a(perception=perception)
-        # add communication noise
         # msg_probs = F.gumbel_softmax(msg_logits, tau=2 / 3)
         noise = th.float_var(Normal(torch.zeros(self.batch_size, self.msg_dim),
                                     torch.ones(self.batch_size, self.msg_dim) * self.com_noise).sample())
         msg_probs = F.softmax(msg_logits + noise, dim=1)
-
+        #msg_probs = F.gumbel_softmax(msg_logits + noise, tau=10 / 3, dim=1)
+        msg_dist =  Categorical(msg_probs)
+        msg = msg_dist.sample()
         # interpret message and sample a guess
-        guess_logits = agent_b(msg=msg_probs)
+        guess_logits = agent_b(msg=msg)
         guess_probs = F.softmax(guess_logits, dim=1)
+        #guess_probs = F.gumbel_softmax(msg_logits, tau=10 / 3, dim=1)
         m = Categorical(guess_probs)
         guess = m.sample()
 
@@ -218,17 +241,29 @@ class NoisyChannelGame(BaseGame):
             reward = env.regier_reward(perception, CIELAB_guess, bw_boost=self.bw_boost)
         elif self.reward_func == 'abs_dist':
             diff = torch.abs(target - guess.unsqueeze(dim=1))
-            reward = 1-(diff.float()/100) #1-(diff.float()/50)
+            reward = 1-(diff.float()/100)  #1-(diff.float()/50)
+            #reward = 1 /(diff.float()+1)**2
         elif self.reward_func == 'number_reward':
             reward = env.number_reward(target, guess)
+        elif self.reward_func == 'inverted_reward':
+            reward = env.inverted_number(target, guess)
+        elif self.reward_func == 'interval_reward':
+            reward = env.interval_reward(target, guess)
+        elif self.reward_func == 'target_reward':
+            reward = env.target_reward(target, guess)
+        elif self.reward_func == 'sim_index': 
+            reward = env.sim_index(target, guess)
         self.sum_reward += reward.sum()
-
         # compute loss and update model
         if self.loss_type =='REINFORCE':
-            loss = (-m.log_prob(guess) * reward).sum() / self.batch_size
+            sender_loss = -(reward * msg_dist.log_prob(msg)).sum() / self.batch_size
+            receiver_loss = -(reward * m.log_prob(guess)).sum() / self.batch_size
+            #receiver_loss = self.criterion_receiver(guess_logits, target.squeeze())
+
+            loss = receiver_loss + sender_loss
+
         elif self.loss_type == 'CrossEntropyLoss':
             loss = self.criterion_receiver(guess_logits, target.squeeze())
-
         return loss
 
     def print_status(self, loss):
@@ -236,6 +271,7 @@ class NoisyChannelGame(BaseGame):
         print("Loss %f Average reward %f" %
               (loss, self.sum_reward / (self.print_interval * self.batch_size))
               )
+        #print("Reward_log: " + str(self.reward_log))
         self.sum_reward = 0
 
 class OneHotChannelGame(BaseGame):
@@ -275,6 +311,10 @@ class OneHotChannelGame(BaseGame):
             reward = env.basic_reward(target, guess)
         elif self.reward_func == 'regier_reward':
             reward = env.regier_reward(perception, guess)
+        elif self.reward_func == 'number_reward':
+            reward = env.number_reward(target, guess)
+        elif self.reward_func == 'inverted_reward':
+            reward = env.inverted_number(target, guess)
         self.sum_reward += reward.sum()
         # compute loss
         self.loss_sender = self.sender_loss_multiplier * ((-m.log_prob(msg) * reward).sum() / self.batch_size)
@@ -312,7 +352,7 @@ class MultiTaskGame(NoisyChannelGame):
         agent_a = th.cuda(agent_a)
         agent_b = th.cuda(agent_b)
 
-        optimizer = optim.Adam(list(agent_a.parameters()) + list(agent_b.parameters()))
+        optimizer = optim.Adam(list(agent_a.parameters()) + list(agent_b.parameters()), lr=0.0001)
 
         for i in range(self.max_epochs):
             optimizer.zero_grad()
@@ -329,10 +369,9 @@ class MultiTaskGame(NoisyChannelGame):
             loss2 = self.communication_channel(env, agent_b, agent_a, color_codes, colors)
             loss2.backward()
             # Backprogate
-            loss = loss1 + loss2
             #loss.backward()
             optimizer.step()
-
+            loss = loss1 + loss2
             # printing status
             if self.print_interval != 0 and ((i+1) % self.print_interval == 0):
                 self.print_status(loss)
@@ -344,5 +383,82 @@ class MultiTaskGame(NoisyChannelGame):
         return agent_a.cpu()
 
 
+class GumbelSoftmaxGame(BaseGame):
 
+    def __init__(self,
+                 reward_func='abs_dist',
+                 bw_boost=0,
+                 com_noise=0,
+                 msg_dim=11,
+                 max_epochs=1000,
+                 perception_noise=0,
+                 batch_size=100,
+                 print_interval=1000,
+                 evaluate_interval=0,
+                 log_path='',
+                 perception_dim=3,
+                 loss_type='CrossEntropyLoss'):
+        super().__init__(max_epochs, batch_size, print_interval, evaluate_interval, log_path)
+        self.reward_func = reward_func
+        self.bw_boost = bw_boost
+        self.com_noise = com_noise
+        self.msg_dim = msg_dim
+        self.perception_noise = perception_noise
+        self.perception_dim = perception_dim
+        self.reward_log = []
+        self.loss_type = loss_type
 
+        self.sum_reward = 0
+
+        self.criterion_receiver = torch.nn.CrossEntropyLoss()
+
+    def communication_channel(self, env, agent_a, agent_b, target, perception):
+        # add perceptual noise
+
+        noise = th.float_var(Normal(torch.zeros(self.batch_size, self.perception_dim),
+                                    torch.ones(self.batch_size, self.perception_dim) * self.perception_noise).sample())
+        perception = perception + noise
+        # generate message
+        msg_logits = agent_a(perception=perception)
+        # msg_probs = F.gumbel_softmax(msg_logits, tau=2 / 3)
+        noise = th.float_var(Normal(torch.zeros(self.batch_size, self.msg_dim),
+                                    torch.ones(self.batch_size, self.msg_dim) * self.com_noise).sample())
+
+        msg_probs = F.softmax(msg_logits + noise, dim=1)
+        #msg_probs = F.gumbel_softmax(msg_logits + noise, tau=10 / 3, dim=1)
+        msg_dist =  Categorical(msg_probs)
+        msg = msg_dist.sample()
+        # interpret message and sample a guess
+        guess_logits = agent_b(msg=msg)
+        guess_probs = F.softmax(guess_logits, dim=1)
+        #guess_probs = F.gumbel_softmax(msg_logits, tau=10 / 3, dim=1)
+        m = Categorical(guess_probs)
+        guess = m.sample()
+
+        #compute reward
+        if self.reward_func == 'regier_reward':
+            CIELAB_guess = env.chip_index2CIELAB(guess.data)
+            reward = env.regier_reward(perception, CIELAB_guess, bw_boost=self.bw_boost)
+        elif self.reward_func == 'abs_dist':
+            diff = torch.abs(target.unsqueeze(dim=1) - guess.unsqueeze(dim=1))
+            reward = 1-(diff.float()/100)  #1-(diff.float()/50)
+
+        # compute loss and update model
+        if self.loss_type =='REINFORCE':
+            sender_loss = -(reward * msg_dist.log_prob(msg)).sum() / self.batch_size
+            receiver_loss = -(reward * m.log_prob(guess)).sum() / self.batch_size
+            #receiver_loss = self.criterion_receiver(guess_logits, target.squeeze())
+
+            loss = receiver_loss + sender_loss
+
+        elif self.loss_type == 'CrossEntropyLoss':
+            loss = self.criterion_receiver(guess_logits, target.squeeze())
+        return loss
+
+    def print_status(self, loss):
+
+        print("Loss %f Average reward %f" %
+              (loss, self.sum_reward / (self.print_interval * self.batch_size))
+              )
+        #print("Reward_log: " + str(self.reward_log))
+        self.sum_reward = 0
