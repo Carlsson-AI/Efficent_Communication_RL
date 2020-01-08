@@ -24,10 +24,10 @@ def run(host_name):
                                    ('perception_dim', 1),
                                    ('target_dim', 100),
                                    ('print_interval', 1000)],
-                     param_ranges=[('avg_over', [1]),  # 50
+                     param_ranges=[('avg_over', [50]),  # 50
                                    ('perception_noise', [0]),  # [0, 25, 50, 100],
-                                   ('msg_dim', [4]), #3, 12
-                                   ('com_noise', np.linspace(start=1, stop=1, num=1))
+                                   ('msg_dim', [3]), #3, 12
+                                   ('com_noise', [0.2])
                                    ],
                      queue=queue)
     queue.sync(exp.pipeline_path, exp.pipeline_path, sync_to=sge.SyncTo.REMOTE, recursive=True)
@@ -41,17 +41,17 @@ def run(host_name):
 
         agent_a = agents.SoftmaxAgent(msg_dim=params_v[exp.axes['msg_dim']],
                                       hidden_dim=exp.fixed_params['hidden_dim'],
-                                #      shared_dim=exp.fixed_params['hidden_dim'],
+                                    #  shared_dim=exp.fixed_params['hidden_dim'],
                                       color_dim=exp.fixed_params['target_dim'],
                                       perception_dim=exp.fixed_params['perception_dim'])
 
         agent_b = agents.SoftmaxAgent(msg_dim=params_v[exp.axes['msg_dim']],
                                       hidden_dim=exp.fixed_params['hidden_dim'],
-                                #      shared_dim=exp.fixed_params['hidden_dim'],
+                                    #  shared_dim=exp.fixed_params['hidden_dim'],
                                       color_dim=exp.fixed_params['target_dim'],
                                       perception_dim=exp.fixed_params['perception_dim'])
 
-        game = com_game.NoisyChannelGame(reward_func='sim_index',
+        game = com_game.NoisyChannelGame(reward_func='exp_reward',
                                          com_noise=params_v[exp.axes['com_noise']],
                                          msg_dim=params_v[exp.axes['msg_dim']],
                                          max_epochs=exp.fixed_params['max_epochs'],
@@ -89,7 +89,7 @@ def visualize(exp):
     with open('numbers.json', 'w') as fp:
         json.dump(ranges, fp)
     #plot_ranges(ranges)
- 
+
 
     # gibson cost
     viz.plot_lines_with_conf(exp, 'gibson_cost', 'msg_dim', 'perception_noise', measure_label='Gibson communication efficiency', x_label='number of color words', z_label='perception $\sigma^2$')
@@ -158,4 +158,3 @@ def stringify_keys(d):
 
 if __name__ == "__main__":
     main()
-

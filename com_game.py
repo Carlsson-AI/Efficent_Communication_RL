@@ -1,10 +1,14 @@
 import numpy as np
 from scipy import stats
 import torch
+import torchvision
 import torch.nn.functional as F
 from torch import optim
 from torch.distributions import Categorical
 from torch.distributions import Normal
+# Writer should be pickled in /gridengine/task.py
+from torch.utils.tensorboard import SummaryWriter
+writer = SummaryWriter()
 
 import copy
 import evaluate
@@ -23,6 +27,7 @@ class BaseGame:
                  batch_size=100,
                  print_interval=1000,
 		         evaluate_interval=0,
+                 tensorboard=True,
                  log_path=''):
         super().__init__()
 
@@ -32,7 +37,11 @@ class BaseGame:
         self.evaluate_interval = evaluate_interval
         self.log_path = log_path
         self.training_mode = True
+        self.tensorboard = tensorboard
 
+        self.board_reward = 0
+        self.sender_loss = 0
+        self.receiver_loss = 0
         self.reward_log = []
         self.gibson_cost = []
         self.regier_cost = []
@@ -42,7 +51,6 @@ class BaseGame:
     def play(self, env, agent_a, agent_b):
         agent_a = th.cuda(agent_a)
         agent_b = th.cuda(agent_b)
-
         optimizer = optim.Adam(list(agent_a.parameters()) + list(agent_b.parameters()))
 
         for i in range(self.max_epochs):
@@ -53,21 +61,28 @@ class BaseGame:
             colors = th.float_var(colors)
 
             loss = self.communication_channel(env, agent_a, agent_b, color_codes, colors)
-
             loss.backward()
             optimizer.step()
+
+
+            # Update tensorboard
+            #print(self.tensorboard)
+            if((i+1) % self.print_interval == 0):
+                self.tensorboard_update(i, env, agent_a, agent_b)
             # printing status
             if self.print_interval != 0 and ((i+1) % self.print_interval == 0):
                 if self.loss_type=='REINFORCE':
                     #self.print_status(-loss)
                     self.print_status(loss)
-                else:
-                    self.print_status(loss)
+        #        else:
+                    #self.print_status(loss)
 
             if self.evaluate_interval != 0 and ((i+1) % self.evaluate_interval == 0):
                 self.evaluate(env, agent_a)
-        agent_a.reward_log = self.reward_log
-        agent_b.reward_log = self.reward_log
+
+        #agent_a.reward_log = self.reward_log
+        #agent_b.reward_log = self.reward_log
+
         return agent_a.cpu()
 
     def communication_channel(self, env, agent_a, agent_b, color_codes, colors):
@@ -181,8 +196,40 @@ class BaseGame:
                torch.exp(loss))
               )
 
-    def get_reward_log(self, a): 
-        return a.reward_log
+
+    def tensorboard_update(self, epoch, env, a_agent, b_agent):
+        # Log scalars
+        writer.add_scalar('Loss/sender_loss',self.sender_loss/(self.print_interval * self.batch_size), epoch)
+        writer.add_scalar('Loss/receiver_loss',self.receiver_loss/(self.print_interval * self.batch_size), epoch)
+        writer.add_scalar('Metrics/Reward_'+str(self.reward_func), self.board_reward.sum()/(self.print_interval * self.batch_size), epoch)
+        # log evaluation metrics
+        V = evaluate.agent_language_map(env, a_agent)
+        # term usage
+        termed_used = evaluate.compute_term_usage(V=V)[-1]
+        writer.add_scalar('Metrics/term_usage',termed_used, epoch)
+        # Agent-stats
+        perception_layer = a_agent.perception_embedding.weight
+        msg_layer = a_agent.msg_creator.weight
+        writer.add_histogram('Sender/perception_layer', perception_layer, epoch)
+        writer.add_histogram('Sender/msg_layer', msg_layer, epoch)
+        writer.add_scalar('Sender/perception_layer_grad', torch.abs(perception_layer.grad).sum(), epoch)
+        writer.add_scalar('Sender/msg_layer_grad', torch.abs(msg_layer.grad).sum(), epoch)
+
+        receiver_layer = b_agent.msg_receiver.weight
+        guess_layer = b_agent.color_estimator.weight
+        writer.add_histogram('Receiver/receiver_layer', receiver_layer, epoch)
+        writer.add_histogram('Receiver/guess_layer', guess_layer, epoch)
+        writer.add_scalar('Receiver/receiver_layer_grad', torch.abs(receiver_layer.grad).sum(), epoch)
+        writer.add_scalar('Receiver/guess_layer_grad', torch.abs(guess_layer.grad).sum(), epoch)
+
+        # Produce partition
+        # if number environment:
+        partition = self.compute_ranges(V)
+        writer.add_text('Partition', str(partition), epoch)
+        writer.flush()
+        self.sender_loss=0
+        self.receiver_loss=0
+
 
 class NoisyChannelGame(BaseGame):
 
@@ -210,7 +257,7 @@ class NoisyChannelGame(BaseGame):
         self.loss_type = loss_type
 
         self.sum_reward = 0
-
+        self.entropy_coef = 1
         self.criterion_receiver = torch.nn.CrossEntropyLoss()
 
     def communication_channel(self, env, agent_a, agent_b, target, perception):
@@ -225,7 +272,7 @@ class NoisyChannelGame(BaseGame):
         noise = th.float_var(Normal(torch.zeros(self.batch_size, self.msg_dim),
                                     torch.ones(self.batch_size, self.msg_dim) * self.com_noise).sample())
         msg_probs = F.softmax(msg_logits + noise, dim=1)
-        #msg_probs = F.gumbel_softmax(msg_logits + noise, tau=10 / 3, dim=1)
+        #ßßßßmsg_probs = F.gumbel_softmax(msg_logits + noise, tau=10 / 3, dim=1)
         msg_dist =  Categorical(msg_probs)
         msg = msg_dist.sample()
         # interpret message and sample a guess
@@ -243,6 +290,10 @@ class NoisyChannelGame(BaseGame):
             diff = torch.abs(target - guess.unsqueeze(dim=1))
             reward = 1-(diff.float()/100)  #1-(diff.float()/50)
             #reward = 1 /(diff.float()+1)**2
+        elif self.reward_func == 'exp_reward':
+            diff = torch.abs(target - guess.unsqueeze(dim=1))
+            reward = 2 ** (-diff.float())  #1-(diff.float()/50)
+            #reward = 1 /(diff.float()+1)**2
         elif self.reward_func == 'number_reward':
             reward = env.number_reward(target, guess)
         elif self.reward_func == 'inverted_reward':
@@ -251,19 +302,27 @@ class NoisyChannelGame(BaseGame):
             reward = env.interval_reward(target, guess)
         elif self.reward_func == 'target_reward':
             reward = env.target_reward(target, guess)
-        elif self.reward_func == 'sim_index': 
+        elif self.reward_func == 'sim_index':
             reward = env.sim_index(target, guess)
         self.sum_reward += reward.sum()
+        self.board_reward = reward
         # compute loss and update model
         if self.loss_type =='REINFORCE':
-            sender_loss = -(reward * msg_dist.log_prob(msg)).sum() / self.batch_size
-            receiver_loss = -(reward * m.log_prob(guess)).sum() / self.batch_size
-            #receiver_loss = self.criterion_receiver(guess_logits, target.squeeze())
-
+            #receiver_loss =  self.criterion_receiver(guess_logits, target.squeeze())
+            sender_loss = (-msg_dist.log_prob(msg) * reward).sum() / self.batch_size
+            receiver_loss = (-m.log_prob(guess) * reward).sum() / self.batch_size
+            # For tensorboard logging
+            #entropy_loss =  -(self.entropy_coef * (msg_dist.entropy().mean() + m.entropy().mean()))
+            self.sender_loss += sender_loss
+            self.receiver_loss += receiver_loss
+            #self.entropy_coef = 0.999 * self.entropy_coef
             loss = receiver_loss + sender_loss
-
+            # loss = receiver_loss + sender_loss + entropy_loss
+            #loss = receiver_loss
         elif self.loss_type == 'CrossEntropyLoss':
             loss = self.criterion_receiver(guess_logits, target.squeeze())
+            # For tensorboard logging
+            self.receiver_loss += loss
         return loss
 
     def print_status(self, loss):
@@ -374,6 +433,7 @@ class MultiTaskGame(NoisyChannelGame):
             loss = loss1 + loss2
             # printing status
             if self.print_interval != 0 and ((i+1) % self.print_interval == 0):
+                self.tensorboard_update(i, env, agent_a)
                 self.print_status(loss)
 
             if self.evaluate_interval != 0 and ((i+1) % self.evaluate_interval == 0):
@@ -417,6 +477,7 @@ class GumbelSoftmaxGame(BaseGame):
 
         noise = th.float_var(Normal(torch.zeros(self.batch_size, self.perception_dim),
                                     torch.ones(self.batch_size, self.perception_dim) * self.perception_noise).sample())
+
         perception = perception + noise
         # generate message
         msg_logits = agent_a(perception=perception)
