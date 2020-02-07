@@ -18,16 +18,16 @@ def run(host_name):
                recursive=True)
     exp = Experiment(exp_name='num_b',
                      fixed_params=[('env', 'numbers'),
-                                   ('max_epochs', 10000),  #10000
-                                   ('hidden_dim', 25),
+                                   ('max_epochs', 1000),  #10000
+                                   ('hidden_dim', 3),
                                    ('batch_size', 100),
                                    ('perception_dim', 1),
                                    ('target_dim', 100),
-                                   ('print_interval', 1000)],
-                     param_ranges=[('avg_over', [50]),  # 50
+                                   ('print_interval', 10)],
+                     param_ranges=[('avg_over', [0]),  # 50
                                    ('perception_noise', [0]),  # [0, 25, 50, 100],
                                    ('msg_dim', [3]), #3, 12
-                                   ('com_noise', [0.2])
+                                   ('com_noise', [0])
                                    ],
                      queue=queue)
     queue.sync(exp.pipeline_path, exp.pipeline_path, sync_to=sge.SyncTo.REMOTE, recursive=True)
@@ -41,17 +41,17 @@ def run(host_name):
 
         agent_a = agents.SoftmaxAgent(msg_dim=params_v[exp.axes['msg_dim']],
                                       hidden_dim=exp.fixed_params['hidden_dim'],
-                                    #  shared_dim=exp.fixed_params['hidden_dim'],
+                                      # shared_dim=3,
                                       color_dim=exp.fixed_params['target_dim'],
                                       perception_dim=exp.fixed_params['perception_dim'])
 
         agent_b = agents.SoftmaxAgent(msg_dim=params_v[exp.axes['msg_dim']],
                                       hidden_dim=exp.fixed_params['hidden_dim'],
-                                    #  shared_dim=exp.fixed_params['hidden_dim'],
+                                      # shared_dim=3,
                                       color_dim=exp.fixed_params['target_dim'],
                                       perception_dim=exp.fixed_params['perception_dim'])
 
-        game = com_game.NoisyChannelGame(reward_func='exp_reward',
+        game = com_game.NoisyChannelGame(reward_func='abs_dist',
                                          com_noise=params_v[exp.axes['com_noise']],
                                          msg_dim=params_v[exp.axes['msg_dim']],
                                          max_epochs=exp.fixed_params['max_epochs'],

@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 import torchHelpers as th
+import numpy as np
 class BasicAgent(nn.Module):
 
     def __init__(self, msg_dim, hidden_dim, color_dim, perception_dim):
@@ -35,56 +36,36 @@ class SoftmaxAgent(nn.Module):
     def __init__(self, msg_dim, hidden_dim, color_dim, perception_dim):
         super().__init__()
         self.msg_dim = msg_dim
-        # Quick fix for logging reward, TO BE FIXED
-        self.reward_log = []
-        #Sending part
-        self.perception_embedding = nn.Linear(perception_dim, hidden_dim, bias=True)
-        self.msg_creator = nn.Linear(hidden_dim, msg_dim, bias=True)
-
-        # Receiving part
-        self.msg_receiver = nn.Linear(msg_dim, hidden_dim, bias=True)
-        self.color_estimator = nn.Linear(hidden_dim, color_dim, bias=True)
-
-    def forward(self, perception=None, msg=None, tau=1/3, test_time=False):
-
-        if perception is not None:
-            h = F.relu(self.perception_embedding(perception))
-            logits = self.msg_creator(h)
-
-            return logits
-
-        if msg is not None:
-            # First make discrete input into a onehot distribution (used for eval)
-            if msg.data.type() == 'torch.LongTensor':
-                onehot = torch.FloatTensor(len(msg), self.msg_dim)
-                onehot.zero_()
-                msg = Variable(onehot.scatter_(1, msg.data.unsqueeze(1), 1))
-
-            h = F.relu(self.msg_receiver(msg))
-            color_logits = self.color_estimator(h)
-            return color_logits
-
-
-class DeepSoftmaxAgent(nn.Module):
-    def __init__(self, msg_dim, hidden_dim, color_dim, perception_dim):
-        super().__init__()
-        self.msg_dim = msg_dim
+        self.perception_dim = perception_dim
+        self.color_dim = color_dim
         # Quick fix for logging reward, TO BE FIXED
         self.reward_log = []
         #Sending part
         self.perception_embedding = nn.Linear(perception_dim, hidden_dim)
-        self.hidden_sender = nn.Linear(hidden_dim, hidden_dim)
+        self.s1 = nn.Linear(hidden_dim, hidden_dim)
+        self.s2 = nn.Linear(hidden_dim, hidden_dim)
+        self.s3 = nn.Linear(hidden_dim, hidden_dim)
+        self.s4 = nn.Linear(hidden_dim, hidden_dim)
+        self.s5 = nn.Linear(hidden_dim, hidden_dim)
+        self.s6 = nn.Linear(hidden_dim, hidden_dim)
         self.msg_creator = nn.Linear(hidden_dim, msg_dim)
 
         # Receiving part
+        # self.msg_receiver = nn.Linear(msg_dim, hidden_dim)
         self.msg_receiver = nn.Linear(msg_dim, hidden_dim)
-        self.hidden_rec = nn.Linear(hidden_dim, hidden_dim)
+        self.r1 = nn.Linear(hidden_dim, hidden_dim)
+        self.r2 = nn.Linear(hidden_dim, hidden_dim)
+        self.r3 = nn.Linear(hidden_dim, hidden_dim)
+        self.r4 = nn.Linear(hidden_dim, hidden_dim)
+        self.r5 = nn.Linear(hidden_dim, hidden_dim)
+        self.r6 = nn.Linear(hidden_dim, hidden_dim)
         self.color_estimator = nn.Linear(hidden_dim, color_dim)
+
     def forward(self, perception=None, msg=None, tau=1/3, test_time=False):
 
         if perception is not None:
             h = F.relu(self.perception_embedding(perception))
-            h = F.relu(self.hidden_sender(h))
+            h = F.relu(self.s1(h))
             logits = self.msg_creator(h)
 
             return logits
@@ -97,10 +78,8 @@ class DeepSoftmaxAgent(nn.Module):
                 msg = Variable(onehot.scatter_(1, msg.data.unsqueeze(1), 1))
 
             h = F.relu(self.msg_receiver(msg))
-            h = F.relu(self.hidden_rec(h))
             color_logits = self.color_estimator(h)
             return color_logits
-
 
 class BasicMultiTaskAgent(nn.Module):
     def __init__(self, msg_dim, hidden_dim, shared_dim, color_dim, perception_dim):
@@ -139,36 +118,94 @@ class BasicMultiTaskAgent(nn.Module):
             probs = F.relu(self.msg_creator(h))
             return probs
 
-
-
-class SoftmaxBaselineAgent(nn.Module):
+class SimpleAgent(nn.Module):
     def __init__(self, msg_dim, hidden_dim, color_dim, perception_dim):
         super().__init__()
         self.msg_dim = msg_dim
-        # Quick fix for logging reward
+        self.perception_dim = perception_dim
+        self.color_dim = color_dim
+        # Quick fix for logging reward, TO BE FIXED
         self.reward_log = []
-        # Ini policy parametrization
+        #Sending part
+        self.msg_creator = nn.Linear(perception_dim, msg_dim)
+
+        # Receiving part
+        # self.msg_receiver = nn.Linear(msg_dim, hidden_dim)
+        self.color_estimator = nn.Linear(msg_dim, color_dim)
+        # self.color_estimator = nn.Embedding(msg_dim, color_dim)
+
+    def forward(self, perception=None, msg=None, tau=1/3, test_time=False):
+
+        if perception is not None:
+            logits = self.msg_creator(perception)
+
+            return logits
+
+        if msg is not None:
+            # First make discrete input into a onehot distribution (used for eval)
+            if msg.data.type() == 'torch.LongTensor':
+                onehot = torch.FloatTensor(len(msg), self.msg_dim)
+                onehot.zero_()
+                msg = Variable(onehot.scatter_(1, msg.data.unsqueeze(1), 1))
+            color_logits = self.color_estimator(msg)
+            return color_logits
+    def __init__(self, msg_dim, hidden_dim, color_dim, perception_dim):
+        super().__init__()
+        self.msg_dim = msg_dim
+        self.perception_dim = perception_dim
+        self.color_dim = color_dim
+        # Quick fix for logging reward, TO BE FIXED
+        self.reward_log = []
+        #Sending part
+        self.msg_creator = nn.Linear(perception_dim, msg_dim)
+
+        # Receiving part
+        self.color_estimator = nn.Linear(msg_dim, color_dim)
+
+    def forward(self, perception=None, msg=None, tau=1/3, test_time=False):
+
+        if perception is not None:
+            logits = self.msg_creator(perception)
+
+            return logits
+
+        if msg is not None:
+            # First make discrete input into a onehot distribution (used for eval)
+            if msg.data.type() == 'torch.LongTensor':
+                onehot = torch.FloatTensor(len(msg), self.msg_dim)
+                onehot.zero_()
+                msg = Variable(onehot.scatter_(1, msg.data.unsqueeze(1), 1))
+            color_logits = self.color_estimator(msg)
+            return color_logits
+class DummyAgent(nn.Module):
+    def __init__(self, msg_dim, hidden_dim, color_dim, perception_dim):
+        super().__init__()
+        self.msg_dim = msg_dim
+        self.perception_dim = perception_dim
+        self.color_dim = color_dim
+        # Quick fix for logging reward, TO BE FIXED
+        self.reward_log = []
         #Sending part
         self.perception_embedding = nn.Linear(perception_dim, hidden_dim)
         self.msg_creator = nn.Linear(hidden_dim, msg_dim)
 
         # Receiving part
+        # self.msg_receiver = nn.Linear(msg_dim, hidden_dim)
         self.msg_receiver = nn.Linear(msg_dim, hidden_dim)
         self.color_estimator = nn.Linear(hidden_dim, color_dim)
-        # State-value estimator
-        self.state_receiver = nn.Linear(perception_dim, hidden_dim)
-        self.value_approx = nn.Linear(hidden_dim, 1)
-    def forward(self, perception=None, msg=None, tau=1/3, test_time=False, estimate_value=False):
 
-        if estimate_value and perception is not None: 
-            h = F.relu(self.state_receiver(perception))
-            value = F.tanh(self.value_approx(h))
-            return value
+    def forward(self, perception=None, msg=None, tau=1/3, test_time=False):
 
         if perception is not None:
-            h = F.relu(self.perception_embedding(perception))
-            logits = F.relu(self.msg_creator(h))
-
+            numbers = perception.detach().numpy()
+            batch_size = numbers.shape[0]
+            array = np.zeros([batch_size,self.msg_dim])
+            if batch_size == 1:
+                array[0, int(numbers[0][0]) -1 ] = 10
+            else:
+                for i in range(batch_size):
+                    array[i, int(numbers[i][0]) -1 ] = 10
+            logits = torch.FloatTensor(array)
             return logits
 
         if msg is not None:
