@@ -25,7 +25,7 @@ def run(host_name='local', pipeline=''):
                      fixed_params=[('loss_type', 'REINFORCE'),
                                    ('bw_boost', 1),
                                    ('env', 'wcs'),
-                                   ('max_epochs', 100000),  # 10000
+                                   ('max_epochs', 25000),  # 10000
                                    ('hidden_dim', 20),
                                    ('batch_size', 2048),
                                    ('perception_dim', 3),
@@ -33,8 +33,8 @@ def run(host_name='local', pipeline=''):
                                    ('print_interval', 1000),
                                    ('msg_dim', 15)],
                      param_ranges=[('avg_over', range(1)),  # 50
-                                   ('perception_noise',[1]),  # np.logspace(0, 9, num=10, base=2)) [0, 10, 20, 30, 40, 50,  80, 120, 160, 320]), [0, 25, 50, 100],[0, 10, 20, 40, 80, 160, 320]
-                                   ('com_noise', [0.125])],  # np.logspace(-3, 6, num=10, base=2)   [0, 0.1, 0.3, 0.5, 1] [0, 0.5, 3, 10, 20, 50]
+                                   ('perception_noise',[0, 0.1, 0.3, 0.5, 1, 2, 5]),  # np.logspace(0, 9, num=10, base=2)) [0, 10, 20, 30, 40, 50,  80, 120, 160, 320]), [0, 25, 50, 100],[0, 10, 20, 40, 80, 160, 320]
+                                   ('com_noise', [0, 0.1, 0.3, 0.5, 1, 2, 5])],  # np.logspace(-3, 6, num=10, base=2)   [0, 0.1, 0.3, 0.5, 1] [0, 0.5, 3, 10, 20, 50]
                      queue=queue)
     queue.sync(exp.pipeline_path, exp.pipeline_path, sync_to=sge.SyncTo.REMOTE, recursive=True)
 
