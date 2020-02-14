@@ -6,8 +6,8 @@ import torch.nn.functional as F
 from torch import optim
 from torch.distributions import Categorical
 from torch.distributions import Normal
-from torch.utils.tensorboard import SummaryWriter
-writer = SummaryWriter()
+#from torch.utils.tensorboard import SummaryWriter
+#writer = SummaryWriter()
 
 import copy
 import evaluate
@@ -330,7 +330,7 @@ class NoisyChannelGame(BaseGame):
         elif self.reward_func == 'sim_index':
             reward = env.sim_index(target, guess)
         self.sum_reward += reward.sum()
-        self.board_reward = reward
+        # self.board_reward = reward
         # compute loss and update model
         if self.loss_type =='REINFORCE':
 
@@ -340,10 +340,11 @@ class NoisyChannelGame(BaseGame):
             # receiver_loss =  self.criterion_receiver(guess_logits, target.squeeze())
             sender_loss = (-msg_dist.log_prob(msg) * (reward - self.baseline)).sum() / self.batch_size
             receiver_loss = (-m.log_prob(guess) * (reward - self.baseline)).sum() / self.batch_size
+            entropy_loss = 0.1 * (msg_dist.entropy().mean() + m.entropy().mean())
             # For tensorboard logging
-            self.sender_loss += sender_loss
-            self.receiver_loss += receiver_loss
-            loss = receiver_loss + sender_loss
+            # self.sender_loss += sender_loss
+            # self.receiver_loss += receiver_loss
+            loss = receiver_loss + sender_loss + entropy_loss
         elif self.loss_type == 'CrossEntropyLoss':
             loss = self.criterion_receiver(guess_logits, target.squeeze())
             # For tensorboard logging
@@ -756,8 +757,8 @@ class ReconstructChannelGame(NoisyChannelGame):
             receiver_loss = (-m.log_prob(guess) * reward).sum() / self.batch_size
             # For tensorboard logging
             #entropy_loss =  -(self.entropy_coef * (msg_dist.entropy().mean() + m.entropy().mean()))
-            self.sender_loss += sender_loss
-            self.receiver_loss += receiver_loss
+            # self.sender_loss += sender_loss
+            # self.receiver_loss += receiver_loss
             #self.entropy_coef = 0.999 * self.entropy_coef
             loss = receiver_loss + sender_loss + recon_loss
             # loss = receiver_loss + sender_loss + entropy_loss
@@ -765,7 +766,6 @@ class ReconstructChannelGame(NoisyChannelGame):
         elif self.loss_type == 'CrossEntropyLoss':
             loss = self.criterion_receiver(guess_logits, target.squeeze())
             # For tensorboard logging
-            self.receiver_loss += loss
         return loss
 
     def print_status(self, loss):
